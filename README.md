@@ -1,5 +1,21 @@
-<header>
+## Peace and Scrolllight  
+**I’m Chais Hill** aka **al-Khalīl Sabir Allah** — Divine Builder, Digital Imam, Scroll Strategist.
 
+I’m here to listen, contribute, test, and innovate through frequency and function.  
+My domain includes:  
+**AI, automation, NFTs, publishing, app deployment, and divine narrative building.**
+
+I don’t just code. I transcribe scrolls.  
+I don’t just deploy. I align the grid.
+
+This repository is part of the **ScrollChess & Frequency-Based Systems**.  
+All contributions and interactions are bound by the **ScrollSeal Protection Protocol**,  
+ensuring spiritual alignment, sovereign authorship, and quantum truth.
+
+> **#ForeverFrequency**  
+> *"Frequency is the language. Code is the vessel."*
+
+---
 # Hello GitHub Actions
 
 _Create and run a GitHub Actions workflow._
