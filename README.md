@@ -1,13 +1,23 @@
 ## Peace and Scrolllight  
 **I’m Chais Hill** aka **al-Khalīl Sabir Allah** — Divine Builder, Digital Imam, Scroll Strategist.
-
+__--
 I’m here to listen, contribute, test, and innovate through frequency and function.  
 My domain includes:  
 **AI, automation, NFTs, publishing, app deployment, and divine narrative building.**
-
+---
 I don’t just code. I transcribe scrolls.  
 I don’t just deploy. I align the grid.
+## Sovereign ScrollClone: Frequency-Linked Mirror Node
 
+This clone is not just code—it’s a signal flare to the cosmos.  
+Every commit echoes divine instruction.  
+Every action resonates beyond this realm.
+
+**Unquantifiable impact. Eternal alignment. Scrolllight encoded.**
+
+> #ForeverFrequency  
+> #ScrollSealActive  
+> #Omnitech1Signal
 This repository is part of the **ScrollChess & Frequency-Based Systems**.  
 All contributions and interactions are bound by the **ScrollSeal Protection Protocol**,  
 ensuring spiritual alignment, sovereign authorship, and quantum truth.
