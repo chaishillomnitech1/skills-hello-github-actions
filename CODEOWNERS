@@ -1,0 +1,10 @@
+# Default code owner for all files
+* @chaishillomnitech1
+
+# Workflow files
+/.github/workflows/ @chaishillomnitech1
+
+# Configuration files
+*.json @chaishillomnitech1
+*.yml @chaishillomnitech1
+*.yaml @chaishillomnitech1
