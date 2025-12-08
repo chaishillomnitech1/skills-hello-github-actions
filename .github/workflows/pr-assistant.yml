@@ -21,7 +21,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Fetch full history for better context
+          fetch-depth: 1  # Only need current state for PR analysis
           
       # Step 2: Fetch PR diff and metadata
       - name: Get PR details
@@ -72,6 +72,12 @@ jobs:
         uses: actions/github-script@v7
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PR_TITLE: ${{ steps.pr_details.outputs.pr_title }}
+          PR_BODY: ${{ steps.pr_details.outputs.pr_body }}
+          FILE_LIST: ${{ steps.pr_details.outputs.file_list }}
+          ADDITIONS: ${{ steps.pr_details.outputs.additions }}
+          DELETIONS: ${{ steps.pr_details.outputs.deletions }}
+          CHANGED_FILES: ${{ steps.pr_details.outputs.changed_files }}
         with:
           script: |
             const openaiKey = process.env.OPENAI_API_KEY;
@@ -84,30 +90,31 @@ jobs:
               return;
             }
             
-            const prTitle = '${{ steps.pr_details.outputs.pr_title }}';
-            const prBody = '${{ steps.pr_details.outputs.pr_body }}';
-            const fileList = '${{ steps.pr_details.outputs.file_list }}';
-            const additions = '${{ steps.pr_details.outputs.additions }}';
-            const deletions = '${{ steps.pr_details.outputs.deletions }}';
-            const changedFiles = '${{ steps.pr_details.outputs.changed_files }}';
+            // Safely get PR data from environment variables
+            const prTitle = process.env.PR_TITLE || '';
+            const prBody = process.env.PR_BODY || '';
+            const fileList = process.env.FILE_LIST || '';
+            const additions = process.env.ADDITIONS || '0';
+            const deletions = process.env.DELETIONS || '0';
+            const changedFiles = process.env.CHANGED_FILES || '0';
             
             // Prepare the prompt for OpenAI
-            const prompt = `You are a helpful PR assistant. Analyze this pull request and provide:
-            1. A concise summary (2-3 sentences)
-            2. Suggested labels (comma-separated list)
-            3. A changelog entry in markdown format
+            const prompt = `Analyze this pull request and provide a JSON response with summary, labels, and changelog.
             
             PR Title: ${prTitle}
             PR Description: ${prBody}
-            Files Changed (${changedFiles} files, +${additions}/-${deletions}):
+            Files Changed: ${changedFiles} files (+${additions}/-${deletions})
+            Changed Files List:
             ${fileList}
             
-            Respond in the following JSON format:
+            Provide your analysis in this exact JSON format:
             {
-              "summary": "Your summary here",
-              "labels": ["label1", "label2"],
-              "changelog": "- Your changelog entry here"
-            }`;
+              "summary": "A concise 2-3 sentence summary of the changes",
+              "labels": ["label1", "label2", "label3"],
+              "changelog": "- Brief changelog entry describing the change"
+            }
+            
+            Suggested labels can include: enhancement, bug, documentation, refactor, test, chore, security, performance, or area-specific labels.`;
             
             try {
               // Call OpenAI API
@@ -122,7 +129,7 @@ jobs:
                   messages: [
                     {
                       role: 'system',
-                      content: 'You are a helpful GitHub PR assistant that analyzes pull requests and provides summaries, labels, and changelog entries.'
+                      content: 'You are a helpful GitHub PR assistant that analyzes pull requests. You must respond with valid JSON only, containing summary, labels array, and changelog fields.'
                     },
                     {
                       role: 'user',
@@ -130,28 +137,32 @@ jobs:
                     }
                   ],
                   temperature: 0.7,
-                  max_tokens: 500
+                  max_tokens: 1000,
+                  response_format: { type: "json_object" }
                 })
               });
               
               if (!response.ok) {
-                throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
+                const errorText = await response.text();
+                throw new Error(`OpenAI API error: ${response.status} ${response.statusText} - ${errorText}`);
               }
               
               const data = await response.json();
               const aiResponse = data.choices[0].message.content;
               
-              // Parse the JSON response
+              // Parse the JSON response with better error handling
               let parsedResponse;
               try {
-                // Try to extract JSON from the response
-                const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
-                if (jsonMatch) {
-                  parsedResponse = JSON.parse(jsonMatch[0]);
-                } else {
-                  throw new Error('No JSON found in response');
-                }
+                // First, try to parse the entire response as JSON
+                parsedResponse = JSON.parse(aiResponse);
+                
+                // Ensure required fields exist
+                if (!parsedResponse.summary) parsedResponse.summary = 'Summary not generated';
+                if (!parsedResponse.labels) parsedResponse.labels = [];
+                if (!parsedResponse.changelog) parsedResponse.changelog = `- ${prTitle}`;
+                
               } catch (parseError) {
+                core.warning(`JSON parsing failed: ${parseError.message}`);
                 // Fallback to plain text parsing
                 parsedResponse = {
                   summary: aiResponse.split('\n')[0] || 'AI-generated summary',
@@ -178,12 +189,17 @@ jobs:
       # Step 4: Add AI-generated comment to the PR
       - name: Post AI Summary Comment
         uses: actions/github-script@v7
+        env:
+          AI_SUMMARY: ${{ steps.ai_summary.outputs.summary }}
+          AI_LABELS: ${{ steps.ai_summary.outputs.labels }}
+          AI_CHANGELOG: ${{ steps.ai_summary.outputs.changelog }}
+          PR_NUMBER: ${{ steps.pr_details.outputs.pr_number }}
         with:
           script: |
-            const summary = `${{ steps.ai_summary.outputs.summary }}`;
-            const labels = `${{ steps.ai_summary.outputs.labels }}`;
-            const changelog = `${{ steps.ai_summary.outputs.changelog }}`;
-            const prNumber = ${{ steps.pr_details.outputs.pr_number }};
+            const summary = process.env.AI_SUMMARY || 'No summary generated';
+            const labels = process.env.AI_LABELS || '';
+            const changelog = process.env.AI_CHANGELOG || '';
+            const prNumber = parseInt(process.env.PR_NUMBER);
             
             // Create a formatted comment
             const commentBody = `## 🤖 AI-Powered PR Assistant
@@ -215,10 +231,13 @@ jobs:
         if: steps.ai_summary.outputs.labels != ''
         uses: actions/github-script@v7
         continue-on-error: true
+        env:
+          LABELS_STRING: ${{ steps.ai_summary.outputs.labels }}
+          PR_NUMBER: ${{ steps.pr_details.outputs.pr_number }}
         with:
           script: |
-            const labelsString = `${{ steps.ai_summary.outputs.labels }}`;
-            const prNumber = ${{ steps.pr_details.outputs.pr_number }};
+            const labelsString = process.env.LABELS_STRING || '';
+            const prNumber = parseInt(process.env.PR_NUMBER);
             
             if (!labelsString) {
               core.info('No labels to apply');
@@ -265,8 +284,9 @@ jobs:
       - name: Update Changelog
         if: steps.ai_summary.outputs.changelog != ''
         continue-on-error: true
+        env:
+          CHANGELOG_ENTRY: ${{ steps.ai_summary.outputs.changelog }}
         run: |
-          CHANGELOG_ENTRY="${{ steps.ai_summary.outputs.changelog }}"
           
           if [ -n "$CHANGELOG_ENTRY" ]; then
             echo "Changelog entry generated:"
