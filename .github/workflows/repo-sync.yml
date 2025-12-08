@@ -1,0 +1,104 @@
+name: Repository Sync
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      target_repo:
+        description: 'Target repository (owner/repo)'
+        required: true
+        type: string
+      target_branch:
+        description: 'Target branch'
+        required: false
+        default: 'main'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout source repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_PAT }}
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "GitHub Actions Bot"
+          git config --global user.email "actions@github.com"
+
+      - name: Sync to target repository
+        env:
+          GITHUB_PAT: ${{ secrets.GITHUB_PAT }}
+          TARGET_REPO: ${{ github.event.inputs.target_repo || 'chaishillomnitech1/skills-hello-github-actions-hub' }}
+          TARGET_BRANCH: ${{ github.event.inputs.target_branch || 'main' }}
+        run: |
+          echo "=== Repository Sync Hub ==="
+          
+          if [ -z "$GITHUB_PAT" ] || [ "$GITHUB_PAT" = "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" ]; then
+            echo "⚠️ GitHub PAT not configured. Skipping sync."
+            echo "Configure GITHUB_PAT secret with repo scope to enable sync."
+            exit 0
+          fi
+          
+          echo "Source: ${{ github.repository }}"
+          echo "Target: $TARGET_REPO"
+          echo "Branch: $TARGET_BRANCH"
+          
+          # Add remote
+          git remote add target https://x-access-token:${GITHUB_PAT}@github.com/${TARGET_REPO}.git
+          
+          # Fetch target
+          git fetch target $TARGET_BRANCH || echo "Target branch doesn't exist yet"
+          
+          # Push changes
+          echo "Syncing changes..."
+          git push target HEAD:$TARGET_BRANCH --force-with-lease || git push target HEAD:$TARGET_BRANCH
+          
+          echo "✅ Sync completed successfully"
+
+      - name: Create sync summary
+        uses: actions/github-script@v7
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          script: |
+            const targetRepo = '${{ github.event.inputs.target_repo }}' || 'chaishillomnitech1/skills-hello-github-actions-hub';
+            const targetBranch = '${{ github.event.inputs.target_branch }}' || 'main';
+            
+            const summary = `## 🔄 Repository Sync Summary
+            
+            **Source:** ${{ github.repository }}
+            **Target:** ${targetRepo}
+            **Branch:** ${targetBranch}
+            **Commit:** ${{ github.sha }}
+            **Status:** ✅ Synced
+            **Triggered by:** @${{ github.actor }}
+            **Timestamp:** ${new Date().toISOString()}
+            
+            ---
+            *Automated repository synchronization via GitHub Actions*`;
+            
+            console.log(summary);
+            core.summary.addRaw(summary).write();
+
+      - name: Notify on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            console.error('Repository sync failed. Please check logs for details.');
+            console.error('Verify GITHUB_PAT has correct permissions (repo scope).');

@@ -1,0 +1,115 @@
+name: Reward and Mint (Pilot)
+
+on:
+  workflow_dispatch:
+    inputs:
+      recipient_address:
+        description: 'Recipient wallet address'
+        required: true
+        type: string
+      reward_amount:
+        description: 'Reward amount (test tokens)'
+        required: true
+        type: string
+      reason:
+        description: 'Reason for reward'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  reward-pilot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Validate inputs
+        run: |
+          echo "Validating reward request..."
+          RECIPIENT="${{ github.event.inputs.recipient_address }}"
+          AMOUNT="${{ github.event.inputs.reward_amount }}"
+          
+          # Basic validation
+          if [[ ! "$RECIPIENT" =~ ^0x[a-fA-F0-9]{40}$ ]]; then
+            echo "Error: Invalid recipient address format"
+            exit 1
+          fi
+          
+          if [[ ! "$AMOUNT" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "Error: Invalid amount format"
+            exit 1
+          fi
+          
+          echo "Validation passed"
+          echo "Recipient: $RECIPIENT"
+          echo "Amount: $AMOUNT"
+
+      - name: Process reward (Pilot/Test mode)
+        env:
+          REWARDS_PRIVATE_KEY: ${{ secrets.REWARDS_PRIVATE_KEY }}
+          REWARDS_API_KEY: ${{ secrets.REWARDS_API_KEY }}
+          REWARDS_CONTRACT_ADDRESS: ${{ secrets.REWARDS_CONTRACT_ADDRESS }}
+          ALCHEMY_MUMBAI_URL: ${{ secrets.ALCHEMY_MUMBAI_URL }}
+          PILOT_TEST_WALLET: ${{ secrets.PILOT_TEST_WALLET }}
+        run: |
+          echo "=== PILOT TEST MODE ==="
+          echo "This is a test execution on Mumbai testnet"
+          
+          if [ -z "$REWARDS_PRIVATE_KEY" ] || [ "$REWARDS_PRIVATE_KEY" = "0xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" ]; then
+            echo "⚠️ Rewards system not configured. Skipping actual transaction."
+            echo "Configure REWARDS_PRIVATE_KEY and other secrets to enable rewards."
+            exit 0
+          fi
+          
+          echo "Simulating reward transaction..."
+          echo "Network: Mumbai Testnet"
+          echo "Contract: $REWARDS_CONTRACT_ADDRESS"
+          echo "Recipient: ${{ github.event.inputs.recipient_address }}"
+          echo "Amount: ${{ github.event.inputs.reward_amount }}"
+          echo "Reason: ${{ github.event.inputs.reason }}"
+          
+          # In production, this would call the actual smart contract
+          # For pilot phase, we log the action
+          echo "✅ Reward request logged successfully (Pilot mode)"
+
+      - name: Create reward record
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const recipient = '${{ github.event.inputs.recipient_address }}';
+            const amount = '${{ github.event.inputs.reward_amount }}';
+            const reason = '${{ github.event.inputs.reason }}' || 'No reason provided';
+            
+            const recordComment = `## 🎁 Reward Record (Pilot)
+            
+            **Recipient:** \`${recipient}\`
+            **Amount:** ${amount} test tokens
+            **Reason:** ${reason}
+            **Status:** Logged (Test mode)
+            **Network:** Mumbai Testnet
+            **Executed by:** @${{ github.actor }}
+            **Timestamp:** ${new Date().toISOString()}
+            
+            ---
+            *⚠️ This is a pilot test. No actual tokens transferred.*
+            *Configure production secrets to enable live rewards.*`;
+            
+            // Create an issue to track the reward
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[Reward Pilot] ${amount} tokens to ${recipient.substring(0, 10)}...`,
+              body: recordComment,
+              labels: ['reward', 'pilot', 'test']
+            });
