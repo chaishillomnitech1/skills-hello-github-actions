@@ -89,12 +89,23 @@ jobs:
               const req = https.request(options, (res) => {
                 let body = '';
                 res.on('data', (chunk) => body += chunk);
-                res.on('end', () => resolve(JSON.parse(body)));
+                res.on('end', () => {
+                  try {
+                    resolve(JSON.parse(body));
+                  } catch (err) {
+                    reject(new Error(`Failed to parse OpenAI response: ${err.message}`));
+                  }
+                });
               });
               req.on('error', reject);
               req.write(data);
               req.end();
             });
+            
+            // Validate response structure
+            if (!response.choices || !response.choices.length || !response.choices[0].message) {
+              throw new Error('Invalid OpenAI API response structure');
+            }
             
             const review = response.choices[0].message.content;
             core.setOutput('review', review);
