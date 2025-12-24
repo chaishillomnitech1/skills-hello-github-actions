@@ -1,0 +1,297 @@
+name: AI-Powered PR Assistant
+
+# This workflow runs on pull request events to provide AI-powered assistance
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+# Grant necessary permissions for the workflow to interact with PRs
+permissions:
+  pull-requests: write
+  contents: read
+  issues: write
+
+jobs:
+  ai-pr-assistant:
+    name: AI PR Analysis and Enhancement
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Step 1: Checkout the repository code
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1  # Only need current state for PR analysis
+          
+      # Step 2: Fetch PR diff and metadata
+      - name: Get PR details
+        id: pr_details
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            
+            // Get the PR diff
+            const diff = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number,
+              mediaType: {
+                format: 'diff'
+              }
+            });
+            
+            // Get list of changed files
+            const files = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number
+            });
+            
+            const fileList = files.data.map(f => `${f.filename} (+${f.additions}/-${f.deletions})`).join('\n');
+            
+            // Store PR information
+            core.setOutput('pr_title', pr.title);
+            core.setOutput('pr_body', pr.body || 'No description provided');
+            core.setOutput('pr_number', pr.number);
+            core.setOutput('pr_author', pr.user.login);
+            core.setOutput('file_list', fileList);
+            core.setOutput('additions', pr.additions);
+            core.setOutput('deletions', pr.deletions);
+            core.setOutput('changed_files', pr.changed_files);
+            
+            return {
+              title: pr.title,
+              body: pr.body,
+              files: fileList
+            };
+      
+      # Step 3: Generate AI-powered PR summary using OpenAI
+      - name: Generate AI PR Summary
+        id: ai_summary
+        uses: actions/github-script@v7
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PR_TITLE: ${{ steps.pr_details.outputs.pr_title }}
+          PR_BODY: ${{ steps.pr_details.outputs.pr_body }}
+          FILE_LIST: ${{ steps.pr_details.outputs.file_list }}
+          ADDITIONS: ${{ steps.pr_details.outputs.additions }}
+          DELETIONS: ${{ steps.pr_details.outputs.deletions }}
+          CHANGED_FILES: ${{ steps.pr_details.outputs.changed_files }}
+        with:
+          script: |
+            const openaiKey = process.env.OPENAI_API_KEY;
+            
+            if (!openaiKey) {
+              core.warning('OpenAI API key not configured. Skipping AI summary generation.');
+              core.setOutput('summary', '⚠️ AI summary generation skipped: OpenAI API key not configured.');
+              core.setOutput('labels', '');
+              core.setOutput('changelog', '');
+              return;
+            }
+            
+            // Safely get PR data from environment variables
+            const prTitle = process.env.PR_TITLE || '';
+            const prBody = process.env.PR_BODY || '';
+            const fileList = process.env.FILE_LIST || '';
+            const additions = process.env.ADDITIONS || '0';
+            const deletions = process.env.DELETIONS || '0';
+            const changedFiles = process.env.CHANGED_FILES || '0';
+            
+            // Prepare the prompt for OpenAI
+            const prompt = `Analyze this pull request and provide a JSON response with summary, labels, and changelog.
+            
+            PR Title: ${prTitle}
+            PR Description: ${prBody}
+            Files Changed: ${changedFiles} files (+${additions}/-${deletions})
+            Changed Files List:
+            ${fileList}
+            
+            Provide your analysis in this exact JSON format:
+            {
+              "summary": "A concise 2-3 sentence summary of the changes",
+              "labels": ["label1", "label2", "label3"],
+              "changelog": "- Brief changelog entry describing the change"
+            }
+            
+            Suggested labels can include: enhancement, bug, documentation, refactor, test, chore, security, performance, or area-specific labels.`;
+            
+            try {
+              // Call OpenAI API
+              const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${openaiKey}`
+                },
+                body: JSON.stringify({
+                  model: 'gpt-4',
+                  messages: [
+                    {
+                      role: 'system',
+                      content: 'You are a helpful GitHub PR assistant that analyzes pull requests. You must respond with valid JSON only, containing summary, labels array, and changelog fields.'
+                    },
+                    {
+                      role: 'user',
+                      content: prompt
+                    }
+                  ],
+                  temperature: 0.7,
+                  max_tokens: 1000,
+                  response_format: { type: "json_object" }
+                })
+              });
+              
+              if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`OpenAI API error: ${response.status} ${response.statusText} - ${errorText}`);
+              }
+              
+              const data = await response.json();
+              const aiResponse = data.choices[0].message.content;
+              
+              // Parse the JSON response with better error handling
+              let parsedResponse;
+              try {
+                // First, try to parse the entire response as JSON
+                parsedResponse = JSON.parse(aiResponse);
+                
+                // Ensure required fields exist
+                if (!parsedResponse.summary) parsedResponse.summary = 'Summary not generated';
+                if (!parsedResponse.labels) parsedResponse.labels = [];
+                if (!parsedResponse.changelog) parsedResponse.changelog = `- ${prTitle}`;
+                
+              } catch (parseError) {
+                core.warning(`JSON parsing failed: ${parseError.message}`);
+                // Fallback to plain text parsing
+                parsedResponse = {
+                  summary: aiResponse.split('\n')[0] || 'AI-generated summary',
+                  labels: [],
+                  changelog: `- ${prTitle}`
+                };
+              }
+              
+              core.setOutput('summary', parsedResponse.summary);
+              core.setOutput('labels', parsedResponse.labels.join(','));
+              core.setOutput('changelog', parsedResponse.changelog);
+              
+              console.log('AI Summary:', parsedResponse.summary);
+              console.log('Suggested Labels:', parsedResponse.labels);
+              console.log('Changelog Entry:', parsedResponse.changelog);
+              
+            } catch (error) {
+              core.warning(`Failed to generate AI summary: ${error.message}`);
+              core.setOutput('summary', `📝 Summary: ${prTitle}\n\nThis PR modifies ${changedFiles} file(s) with ${additions} addition(s) and ${deletions} deletion(s).`);
+              core.setOutput('labels', '');
+              core.setOutput('changelog', `- ${prTitle}`);
+            }
+      
+      # Step 4: Add AI-generated comment to the PR
+      - name: Post AI Summary Comment
+        uses: actions/github-script@v7
+        env:
+          AI_SUMMARY: ${{ steps.ai_summary.outputs.summary }}
+          AI_LABELS: ${{ steps.ai_summary.outputs.labels }}
+          AI_CHANGELOG: ${{ steps.ai_summary.outputs.changelog }}
+          PR_NUMBER: ${{ steps.pr_details.outputs.pr_number }}
+        with:
+          script: |
+            const summary = process.env.AI_SUMMARY || 'No summary generated';
+            const labels = process.env.AI_LABELS || '';
+            const changelog = process.env.AI_CHANGELOG || '';
+            const prNumber = parseInt(process.env.PR_NUMBER);
+            
+            // Create a formatted comment
+            const commentBody = `## 🤖 AI-Powered PR Assistant
+            
+            ### 📋 Summary
+            ${summary}
+            
+            ### 🏷️ Suggested Labels
+            ${labels ? labels.split(',').map(l => `\`${l.trim()}\``).join(', ') : '_No labels suggested_'}
+            
+            ### 📝 Changelog Entry
+            ${changelog || '_No changelog entry generated_'}
+            
+            ---
+            _This comment was automatically generated by the AI PR Assistant workflow._`;
+            
+            // Post the comment
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: commentBody
+            });
+            
+            core.info('AI summary comment posted successfully!');
+      
+      # Step 5: Apply suggested labels (if any)
+      - name: Apply Suggested Labels
+        if: steps.ai_summary.outputs.labels != ''
+        uses: actions/github-script@v7
+        continue-on-error: true
+        env:
+          LABELS_STRING: ${{ steps.ai_summary.outputs.labels }}
+          PR_NUMBER: ${{ steps.pr_details.outputs.pr_number }}
+        with:
+          script: |
+            const labelsString = process.env.LABELS_STRING || '';
+            const prNumber = parseInt(process.env.PR_NUMBER);
+            
+            if (!labelsString) {
+              core.info('No labels to apply');
+              return;
+            }
+            
+            const labels = labelsString.split(',').map(l => l.trim()).filter(l => l);
+            
+            if (labels.length === 0) {
+              core.info('No valid labels to apply');
+              return;
+            }
+            
+            try {
+              // Get existing repository labels
+              const existingLabels = await github.rest.issues.listLabelsForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo
+              });
+              
+              const existingLabelNames = existingLabels.data.map(l => l.name.toLowerCase());
+              
+              // Filter to only include labels that exist in the repository
+              const validLabels = labels.filter(label => 
+                existingLabelNames.includes(label.toLowerCase())
+              );
+              
+              if (validLabels.length > 0) {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: prNumber,
+                  labels: validLabels
+                });
+                core.info(`Applied labels: ${validLabels.join(', ')}`);
+              } else {
+                core.info('No matching labels found in repository');
+              }
+            } catch (error) {
+              core.warning(`Failed to apply labels: ${error.message}`);
+            }
+      
+      # Step 6: Create or update changelog file (optional)
+      - name: Update Changelog
+        if: steps.ai_summary.outputs.changelog != ''
+        continue-on-error: true
+        env:
+          CHANGELOG_ENTRY: ${{ steps.ai_summary.outputs.changelog }}
+        run: |
+          
+          if [ -n "$CHANGELOG_ENTRY" ]; then
+            echo "Changelog entry generated:"
+            echo "$CHANGELOG_ENTRY"
+            echo ""
+            echo "Note: Automatic changelog updates are disabled by default."
+            echo "To enable, uncomment the changelog update logic in the workflow."
+          fi
