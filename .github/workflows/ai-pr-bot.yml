@@ -36,7 +36,7 @@ jobs:
 
       - name: AI Code Review
         id: ai-review
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         with:
@@ -111,7 +111,7 @@ jobs:
             core.setOutput('review', review);
 
       - name: Post AI Review as Comment
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const review = `${{ steps.ai-review.outputs.review }}`;

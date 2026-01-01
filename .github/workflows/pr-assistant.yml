@@ -26,7 +26,7 @@ jobs:
       # Step 2: Fetch PR diff and metadata
       - name: Get PR details
         id: pr_details
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const pr = context.payload.pull_request;
@@ -69,7 +69,7 @@ jobs:
       # Step 3: Generate AI-powered PR summary using OpenAI
       - name: Generate AI PR Summary
         id: ai_summary
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           PR_TITLE: ${{ steps.pr_details.outputs.pr_title }}
@@ -188,7 +188,7 @@ jobs:
       
       # Step 4: Add AI-generated comment to the PR
       - name: Post AI Summary Comment
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           AI_SUMMARY: ${{ steps.ai_summary.outputs.summary }}
           AI_LABELS: ${{ steps.ai_summary.outputs.labels }}
@@ -229,7 +229,7 @@ jobs:
       # Step 5: Apply suggested labels (if any)
       - name: Apply Suggested Labels
         if: steps.ai_summary.outputs.labels != ''
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         continue-on-error: true
         env:
           LABELS_STRING: ${{ steps.ai_summary.outputs.labels }}
