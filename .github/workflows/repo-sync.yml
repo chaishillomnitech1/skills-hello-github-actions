@@ -72,7 +72,7 @@ jobs:
           echo "✅ Sync completed successfully"
 
       - name: Create sync summary
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         if: github.event_name == 'workflow_dispatch'
         with:
           script: |
@@ -97,7 +97,7 @@ jobs:
 
       - name: Notify on failure
         if: failure()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             console.error('Repository sync failed. Please check logs for details.');

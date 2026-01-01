@@ -84,7 +84,7 @@ jobs:
           echo "✅ Reward request logged successfully (Pilot mode)"
 
       - name: Create reward record
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const recipient = '${{ github.event.inputs.recipient_address }}';
