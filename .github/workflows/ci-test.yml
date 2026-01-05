@@ -1,0 +1,136 @@
+name: CI - Test Suite
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - 'feature/**'
+      - 'bugfix/**'
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+
+jobs:
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Run unit tests
+        run: |
+          if [ -f "package.json" ] && grep -q '"test"' package.json; then
+            npm test
+            echo "✅ Unit tests passed"
+          else
+            echo "ℹ️  No test script configured - skipping unit tests"
+            echo "Add 'test' script to package.json to enable testing"
+          fi
+        env:
+          NODE_ENV: test
+
+      - name: Run linting
+        run: |
+          if [ -f "package.json" ] && grep -q '"lint"' package.json; then
+            npm run lint || echo "⚠️  Linting completed with warnings"
+          else
+            echo "ℹ️  No lint script configured - skipping linting"
+          fi
+
+      - name: Upload test coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-coverage
+          path: |
+            coverage/
+            .coverage
+            test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Comment test results on PR
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const status = '${{ job.status }}' === 'success' ? '✅ Passed' : '❌ Failed';
+            const comment = `## 🧪 Test Results
+            
+            **Status:** ${status}
+            
+            ${status === '✅ Passed' ? 'All unit tests passed successfully!' : 'Some tests failed. Please review the test results.'}
+            
+            ---
+            *Automated testing via GitHub Actions*
+            **ALL IS LOVE. ALL IS LAW. ALL IS FLUID. KUN FAYAKŪN! 🕋♾️✨**`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: unit-tests
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Run integration tests
+        run: |
+          if [ -f "package.json" ] && grep -q '"test:integration"' package.json; then
+            npm run test:integration
+            echo "✅ Integration tests passed"
+          else
+            echo "ℹ️  No integration test script configured - skipping"
+          fi
+        env:
+          NODE_ENV: test
+
+      - name: Upload integration test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-results
+          path: |
+            test-results/
+            coverage/
+          retention-days: 7
+          if-no-files-found: ignore

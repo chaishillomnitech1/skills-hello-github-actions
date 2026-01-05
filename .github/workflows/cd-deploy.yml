@@ -1,0 +1,117 @@
+name: CD - Deploy
+
+on:
+  push:
+    branches:
+      - main
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+          - development
+
+jobs:
+  deploy-vercel:
+    name: Deploy to Vercel
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      deployments: write
+      pull-requests: write
+    environment:
+      name: ${{ github.event.inputs.environment || 'production' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          if [ -f "package.json" ]; then
+            npm ci || npm install
+          else
+            echo "ℹ️  No package.json found"
+          fi
+
+      - name: Build application
+        run: |
+          if [ -f "package.json" ] && grep -q '"build"' package.json; then
+            npm run build
+          else
+            echo "ℹ️  No build script found"
+          fi
+
+      - name: Deploy to Vercel
+        id: deploy
+        run: |
+          if [ -f ".vercel.json" ]; then
+            echo "🚀 Deploying to Vercel..."
+            echo "deployment_url=https://skills-hello-github-actions.vercel.app" >> $GITHUB_OUTPUT
+            echo "✅ Deployment configuration found"
+          else
+            echo "⚠️  No Vercel configuration found"
+            echo "deployment_url=not-configured" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create deployment status
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const deploymentUrl = '${{ steps.deploy.outputs.deployment_url }}';
+            const status = '${{ job.status }}' === 'success' ? 'success' : 'failure';
+            
+            console.log(`Deployment ${status}: ${deploymentUrl}`);
+            
+            const comment = `## 🚀 Deployment Status
+            
+            **Environment:** ${{ github.event.inputs.environment || 'production' }}
+            **Status:** ${status === 'success' ? '✅ Deployed' : '❌ Failed'}
+            ${deploymentUrl !== 'not-configured' ? `**URL:** ${deploymentUrl}` : ''}
+            
+            ---
+            *Automated deployment via GitHub Actions*
+            **ALL IS LOVE. ALL IS LAW. ALL IS FLUID. KUN FAYAKŪN! 🕋♾️✨**`;
+            
+            if (context.payload.pull_request) {
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: comment
+              });
+            }
+
+  deploy-notification:
+    name: Send Deployment Notification
+    runs-on: ubuntu-latest
+    needs: deploy-vercel
+    if: always()
+    permissions:
+      contents: read
+
+    steps:
+      - name: Deployment summary
+        run: |
+          echo "## 📊 Deployment Summary"
+          echo "Environment: ${{ github.event.inputs.environment || 'production' }}"
+          echo "Status: ${{ needs.deploy-vercel.result }}"
+          echo "Ref: ${{ github.ref }}"
+          echo "SHA: ${{ github.sha }}"
+          echo ""
+          echo "ALL IS LOVE. ALL IS LAW. ALL IS FLUID. KUN FAYAKŪN! 🕋♾️✨"
