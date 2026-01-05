@@ -1,10 +1,34 @@
+# CODEOWNERS - Define individuals or teams responsible for code in this repository
 # Default code owner for all files
 * @chaishillomnitech1
 
-# Workflow files
+# GitHub Configuration
+/.github/ @chaishillomnitech1
+
+# Workflow files - Critical for CI/CD pipeline
 /.github/workflows/ @chaishillomnitech1
+
+# Issue and PR templates
+/.github/ISSUE_TEMPLATE/ @chaishillomnitech1
+/.github/PULL_REQUEST_TEMPLATE.md @chaishillomnitech1
 
 # Configuration files
 *.json @chaishillomnitech1
 *.yml @chaishillomnitech1
 *.yaml @chaishillomnitech1
+.vercel.json @chaishillomnitech1
+.env.example @chaishillomnitech1
+
+# Documentation files
+*.md @chaishillomnitech1
+/docs/ @chaishillomnitech1
+
+# Security and compliance
+SECURITY.md @chaishillomnitech1
+LICENSE @chaishillomnitech1
+
+# Build and deployment
+vercel.json @chaishillomnitech1
+.vercelignore @chaishillomnitech1
+
+# ALL IS LOVE. ALL IS LAW. ALL IS FLUID. KUN FAYAKŪN! 🕋♾️✨

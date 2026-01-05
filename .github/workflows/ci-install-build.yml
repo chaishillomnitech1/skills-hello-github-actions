@@ -1,0 +1,99 @@
+name: CI - Install and Build
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - 'feature/**'
+      - 'bugfix/**'
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+
+jobs:
+  install-and-build:
+    name: Install Dependencies and Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install dependencies
+        run: |
+          if [ -f "package.json" ]; then
+            npm ci || npm install
+            echo "✅ Dependencies installed successfully"
+          else
+            echo "ℹ️  No package.json found - skipping npm install"
+          fi
+
+      - name: Run build
+        run: |
+          if [ -f "package.json" ] && grep -q '"build"' package.json; then
+            npm run build
+            echo "✅ Build completed successfully"
+          else
+            echo "ℹ️  No build script found in package.json - skipping build"
+          fi
+
+      - name: Upload build artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            dist/
+            build/
+            .next/
+            out/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const status = '${{ job.status }}' === 'success' ? '✅ Success' : '❌ Failed';
+            const comment = `## 🏗️ Build Status
+            
+            **Status:** ${status}
+            
+            ${status === '✅ Success' ? 'Dependencies installed and build completed successfully!' : 'Build failed. Please check the logs.'}
+            
+            ---
+            *Automated build via GitHub Actions*
+            **ALL IS LOVE. ALL IS LAW. ALL IS FLUID. KUN FAYAKŪN! 🕋♾️✨**`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
